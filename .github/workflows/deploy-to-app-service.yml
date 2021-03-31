@@ -1,0 +1,95 @@
+name: Build and deploy Django app to Azure App Service
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+
+  # ジョブひとつめ。
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      # App Service の Python が3.8です。統一します。
+      - name: Setup Python version
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+
+      # 仮想環境を作成、起動します。
+      - name: Create and start virtual environment
+        run: |
+          python3 -m venv venv
+          source venv/bin/activate
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Collect static
+        run: python manage.py collectstatic --noinput
+
+      - name: Run tests
+        run: python manage.py test
+
+      # 次のジョブのためにファイルをアップロードします。
+      # NOTE: 仮想環境はランタイム OS と互換性がないのでアップロードされません。
+      # NOTE: ジョブの最後にファイルをアップロードすると、
+      #       デプロイに失敗した場合には、[アクション] タブからファイルをダウンロードしてデバッグやコンテンツの確認できます。
+      - name: Upload artifact for deployment jobs
+        uses: actions/upload-artifact@v2
+        with:
+          name: python-app
+          path: |
+            .
+            !venv/
+
+  # ジョブふたつめ。
+  deploy-to-webapp:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # 前のジョブでアップロードしたファイルをダウンロードします。
+      - uses: actions/download-artifact@v2
+        with:
+          name: python-app
+          path: .
+
+      # Azure CLI にログインします。
+      # NOTE: CREDENTIALS は Deploy to Azure 拡張機能で自動生成してもらったものです。
+      - name: Log in to Azure CLI
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets._8AB7 }}
+
+      # DISABLE_COLLECTSTATIC: 前のジョブで行ったので不要です。
+      # POST_BUILD_COMMAND: ランタイムビルドに続いてコマンドを実行できるフックです。
+      # SCM_DO_BUILD_DURING_DEPLOYMENT: oryx ビルドパイプラインを有効にするものらしいがよくわからないです。
+      # DJANGO_ENV: Django を production にします。
+      # NOTE: settings.py だけしか設定ファイルがないとき有効なのかは知りません。
+      - name: Disable static collection and set migration command on App Service
+        uses: Azure/appservice-settings@v1
+        with:
+          app-name: RESTaurant-app-service
+          app-settings-json: '[
+            { "name": "DISABLE_COLLECTSTATIC", "value": "true" },
+            { "name": "POST_BUILD_COMMAND",  "value": "python manage.py makemigrations && python manage.py migrate" },
+            { "name": "SCM_DO_BUILD_DURING_DEPLOYMENT", "value": "true" },
+            { "name": "DJANGO_ENV", "value": "production"}
+          ]'
+
+      # デプロイします。
+      - name: Deploy to App Service
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: RESTaurant-app-service
+
+      # Azure logout
+      - name: logout
+        run: |
+          az logout
