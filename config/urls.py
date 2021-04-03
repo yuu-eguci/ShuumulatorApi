@@ -21,6 +21,7 @@ from rest_framework.routers import DefaultRouter
 # Create a router and register our viewsets with it.
 # NOTE: viewsets とやらは views.py で定義する。
 router = DefaultRouter()
+# r'api/v1/users' にすればその URL でアクセスできる。
 router.register(r'users', views.UserViewSet)
 
 urlpatterns = [
