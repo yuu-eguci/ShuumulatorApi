@@ -23,6 +23,16 @@ from rest_framework.routers import DefaultRouter
 router = DefaultRouter()
 # r'api/v1/users' にすればその URL でアクセスできる。
 router.register(r'users', views.UserViewSet)
+# NOTE: The base to use for the URL names that are created.
+#       (って書いてあるけど URL になるのは第一引数だ。どゆこと?)
+#       If unset the basename will be automatically generated based on the queryset attribute of the viewset, if it has one.
+#       Note that if the viewset does not include a queryset attribute
+#       then you must set basename when registering the viewset.
+#       (portfolio は non model API なので、 queryset が無い。わざわざ定義する必要がある。)
+# NOTE: でも上述したとおり URL になるのは第一引数だ。なんのために basename を定義してるのかわからん。
+#       それを表すため、意味のない値 foo を設定しています。
+router.register(r'api/v1/portfolio', views.PortfolioViewSet, basename='foo')
+router.register(r'api/v1/realized', views.RealizedViewSet, basename='bar')
 
 urlpatterns = [
     # Django 本来のアドミン画面。
