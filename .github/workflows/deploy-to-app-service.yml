@@ -72,21 +72,29 @@ jobs:
       # SCM_DO_BUILD_DURING_DEPLOYMENT: oryx ビルドパイプラインを有効にするものらしいがよくわからないです。
       # DJANGO_ENV: Django を production にします。
       # NOTE: settings.py だけしか設定ファイルがないとき有効なのかは知りません。
+      #       -> 設定ファイルは manage.py や wsgi.py で分岐させています。 DJANGO_ENV は関係ありません。
       - name: Disable static collection and set migration command on App Service
         uses: Azure/appservice-settings@v1
         with:
           app-name: shuumulator-api
+          # NOTE: POST_BUILD_COMMAND に "python manage.py makemigrations &&" を含めていたこともあります。
+          #       しかし migration files をコミットに含める運用にしたことに伴い、削除しました。
           app-settings-json: '[
             { "name": "DISABLE_COLLECTSTATIC", "value": "true" },
-            { "name": "POST_BUILD_COMMAND",  "value": "python manage.py makemigrations && python manage.py migrate" },
+            { "name": "POST_BUILD_COMMAND",  "value": "python manage.py migrate" },
             { "name": "SCM_DO_BUILD_DURING_DEPLOYMENT", "value": "true" },
             { "name": "DJANGO_ENV", "value": "production"}
           ]'
+          # NOTE: これら↑は App Service の環境変数に書かれる。
+          # NOTE: であれば DB 用の環境変数もここ(というより GitHub secrets)に記載するべきか?
+          #       いやでも secrets はあとから見返せないから……。検討。
+          # NOTE: WEBSITE_HOSTNAME はおそらく App Service の予約名? だから設定不可。
 
       # デプロイします。
       - name: Deploy to App Service
         uses: azure/webapps-deploy@v2
         with:
+          # NOTE: おそらく? azure/login@v1 を使わない場合は publish-profile が必要なのだと思う。
           app-name: shuumulator-api
 
       # Azure logout
