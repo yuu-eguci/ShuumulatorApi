@@ -76,6 +76,11 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/3.1/ref/settings/#databases
 
+# Model の pk を id で自動定義する設定です。
+# NOTE: これが無い、そして model に id も設定していないと warning が出ます。
+#       Auto-created primary key used when not defining a primary key type, by default 'django.db.models.AutoField'.
+DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
