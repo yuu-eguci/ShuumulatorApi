@@ -9,6 +9,8 @@ from rest_framework.response import Response
 from app.models import Trading, Stock, StockLog
 import time
 from django_pandas.io import read_frame
+from rest_framework.views import APIView
+from app.auth import NormalAuthentication, JWTAuthentication
 
 # __init__.py に定義しているクラスです。
 from . import Portfolio, Realized
@@ -24,6 +26,11 @@ class UserViewSet(viewsets.ModelViewSet):
 
 
 class PortfolioViewSet(viewsets.ViewSet):
+
+    # JWT ログインしているユーザのみ許可する設定です。
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
     # Required for the Browsable API renderer to have a nice form.
     serializer_class = PortfolioSerializer
 
@@ -59,6 +66,11 @@ class PortfolioViewSet(viewsets.ViewSet):
 
 
 class RealizedViewSet(viewsets.ViewSet):
+
+    # JWT ログインしているユーザのみ許可する設定です。
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
     # Required for the Browsable API renderer to have a nice form.
     serializer_class = RealizedSerializer
 
@@ -269,3 +281,23 @@ def my_customized_server_error(request, template_name='500.html'):
     from django.views import debug
     error_html = debug.technical_500_response(request, *sys.exc_info()).content
     return HttpResponseServerError(error_html)
+
+
+class Login(APIView):
+    """このクラスにより、次のことが可能になった。
+    - path('api-token-auth/', views.Login.as_view())
+    - curl -X POST -d "code=everybody-dance-now" http://localhost:8000/api-token-auth/ こんなふうにアクセスすると jwt が返ってくる。(def post の効果)
+    - authentication_classes = [JWTAuthentication] と permission_classes = [permissions.IsAuthenticated] をつけた viewset には、その token を付与しとかないとアクセスできない
+
+    Args:
+        APIView ([type]): [description]
+
+    Returns:
+        [type]: [description]
+    """
+
+    authentication_classes = [NormalAuthentication]
+
+    def post(self, request, *args, **kwargs):
+        print('Login.post!!', request.POST)
+        return Response({'token': request.user})

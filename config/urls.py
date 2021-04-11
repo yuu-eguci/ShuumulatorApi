@@ -40,13 +40,16 @@ urlpatterns = [
     # トップ画面を REST framework にする。
     path('', include(router.urls)),
     # NOTE: api-auth/ を追加することで画面に login のリンクが出る。
-    path('api-auth/',
-         include('rest_framework.urls',
-                 namespace='rest_framework'),
-         ),
+    # NOTE: 今回は jwt の認証をつかうので不要。
+    # path('api-auth/',
+    #      include('rest_framework.urls',
+    #              namespace='rest_framework'),
+    #      ),
     # NOTE: ViewSet を使って↑のように書くことで、こういうのが全部省略できる。
     # path('users/', user_list, name='user-list'),
     # path('users/<int:pk>/', user_detail, name='user-detail'),
+
+    path('api-token-auth/', views.Login.as_view()),
 ]
 
 handler500 = views.my_customized_server_error
