@@ -8,6 +8,7 @@ from django.http import (
 from rest_framework.response import Response
 from app.models import Trading, Stock, StockLog
 import time
+from django_pandas.io import read_frame
 
 # __init__.py に定義しているクラスです。
 from . import Portfolio, Realized
@@ -80,10 +81,19 @@ class RealizedViewSet(viewsets.ViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
+            # 完了済みの Tradings を取得します。
+            completed_tradings = fetch_completed_tradings(pk, each)
+
+            # each 引数で指定された単位ごとに分割します。
+            divided_tradings = divide_tradings(completed_tradings, each)
+
+            # 分割してもらったけれど、必要なのは単位ごとに分けられた各グループの集計結果だけです。
+            realized_list = aggregate_tradings(divided_tradings)
+
             return Response({
                 'user_id': pk,
                 'each': each,
-                'realized': [],
+                'realized': realized_list,
                 'win_rates': 0,
                 'total_gain': 0,
                 'total_lost': 0,
@@ -93,6 +103,88 @@ class RealizedViewSet(viewsets.ViewSet):
             return Response(status=status.HTTP_404_NOT_FOUND)
         except ValueError:
             return Response(status=status.HTTP_400_BAD_REQUEST)
+
+
+def fetch_completed_tradings(user_id: int, each: str):
+
+    # NOTE: DB アクセスにどれくらい時間がかかるのか、なんとなく計測しています。
+    start = time.time()
+
+    # 完了した Tradings を収集します。
+    # NOTE: 完了は sell IS NOT NULL です。
+    completed_tradings = Trading.objects.filter(sell__isnull=False, user_id=user_id).values('stock', 'buy', 'sell', 'sold_at')
+
+    # 時間計測ログです。
+    print(f'fetch_completed_trading(Trading access finished): {time.time() - start}秒')
+
+    return completed_tradings
+
+
+def divide_tradings(tradings, each):
+
+    # each 引数に従って realized リストを作ります。
+    # NOTE: year(default) -> 年ごとに gain, lost を集計。
+    #       month -> 月ごとに集計。
+    #       week -> 週ごとに集計。
+    #       day -> 日ごとに集計。
+
+    # NOTE: django_pandas.io.read_frame です。
+    # NOTE: pandas を使うと、各行に「年」「月」「週」「日」属性をかんたんにつけられそうだったので、使います。
+    data_frame = read_frame(tradings)
+
+    # 各行に「年」「月」「週」「日」属性を付与します。
+    # NOTE: これら属性には、 dt.*** の返却値の合計が入ります。値自体は無意味だけど、各単位ごとに一意になるってこと。うまく説明できねえ。
+    # NOTE: each ごとに必要な属性が違うので、指定された each 以外の3つの属性は無駄ですが、 if が多くなって面倒なので一括で付与します。
+    data_frame['year'] = data_frame['sold_at'].dt.year
+    data_frame['month'] = data_frame['year'] + data_frame['sold_at'].dt.month
+    data_frame['week'] = data_frame['month'] + data_frame['sold_at'].dt.isocalendar().week
+    data_frame['day'] = data_frame['week'] + data_frame['sold_at'].dt.day
+
+    # どうせ data frame に行を足すならば、 realized 列も足してしまえ。
+    data_frame['realized'] = data_frame['sell'] - data_frame['buy']
+
+    # NOTE: こんな data_frame になっています。
+    #                        stock      buy     sell                          sold_at  year  month  week   day realized
+    #       0     Stock object (1)  1443.00  1399.00        2021-03-05 03:04:02+00:00  2021   2024  2033  2038   -44.00
+    #       1     Stock object (2)  1677.00  1624.00        2021-03-03 01:37:14+00:00  2021   2024  2033  2036   -53.00
+    #       ..                 ...      ...      ...                              ...   ...    ...   ...   ...      ...
+    #       421  Stock object (40)   355.00   311.00 2021-04-08 06:26:59.236529+00:00  2021   2025  2039  2047   -44.00
+    #       422  Stock object (29)  1282.00  1160.00 2021-04-09 01:25:29.109191+00:00  2021   2025  2039  2048  -122.00
+
+    # each 引数ごとに分けます。
+    # NOTE: each=year なら data_frame[year] の値ごとに分ければいいということ。
+    divided = []
+    # NOTE: data_frame をそのまま for すると column 取得になる。びっくり。
+    used_value = []
+    for index, row in data_frame.iterrows():
+        # 属性の値が変わったタイミングで新しいグループ(list)を作る。
+        if row[each] not in used_value:
+            divided.append([])
+            used_value.append(row[each])
+        # row は一番新しいグループに入れる。
+        # NOTE: pandas の概念は本関数内で完結させるため、 dict で返します。
+        divided[-1].append(dict(row))
+
+    return divided
+
+
+def aggregate_tradings(divided_tradings):
+
+    # こういうリストになっています。
+    # [[Trading list], [Trading list], ]
+    # 各 Trading list を { gain, lost } の情報にまとめます。
+    realized_list = []
+    for trading_list in divided_tradings:
+        gain = 0
+        lost = 0
+        for trading in trading_list:
+            if trading['realized'] >= 0:
+                gain += trading['realized']
+            else:
+                # 正の数で合計したいので、マイナスをつけます。
+                lost += -trading['realized']
+        realized_list.append(dict(gain=gain, lost=lost))
+    return realized_list
 
 
 def fetch_keeping_tradings(user_id: int) -> list:
