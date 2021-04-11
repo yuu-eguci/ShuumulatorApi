@@ -11,6 +11,7 @@ django-filter = "*"
 pymysql = "*"
 whitenoise = "*"
 django-pandas = "*"
+pyjwt = "*"
 
 [dev-packages]
 
