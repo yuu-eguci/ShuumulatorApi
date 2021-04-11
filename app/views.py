@@ -84,6 +84,9 @@ class RealizedViewSet(viewsets.ViewSet):
             # 完了済みの Tradings を取得します。
             completed_tradings = fetch_completed_tradings(pk, each)
 
+            # realized 返却を行うため、以下で分割とかするけど、トータルの gain や lost、 win rate もほしいので先に集計しておきます。
+            win_rate, total_gain, total_lost = aggregate_totals(completed_tradings)
+
             # each 引数で指定された単位ごとに分割します。
             divided_tradings = divide_tradings(completed_tradings, each)
 
@@ -94,15 +97,33 @@ class RealizedViewSet(viewsets.ViewSet):
                 'user_id': pk,
                 'each': each,
                 'realized': realized_list,
-                'win_rates': 0,
-                'total_gain': 0,
-                'total_lost': 0,
+                'win_rate': win_rate,
+                'total_gain': total_gain,
+                'total_lost': total_lost,
             })
 
         except KeyError:
             return Response(status=status.HTTP_404_NOT_FOUND)
         except ValueError:
             return Response(status=status.HTTP_400_BAD_REQUEST)
+
+
+def aggregate_totals(tradings):
+
+    win = 0
+    lose = 0
+    total_gain = 0
+    total_lost = 0
+    for trading in tradings:
+        realized = trading['sell'] - trading['buy']
+        if realized >= 0:
+            win += 1
+            total_gain += realized
+        else:
+            lose += 1
+            total_lost += -realized
+    win_rate = win / (win + lose)
+    return win_rate, total_gain, total_lost
 
 
 def fetch_completed_tradings(user_id: int, each: str):
