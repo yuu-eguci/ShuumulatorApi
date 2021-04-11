@@ -91,7 +91,7 @@ class RealizedViewSet(viewsets.ViewSet):
             divided_tradings = divide_tradings(completed_tradings, each)
 
             # 分割してもらったけれど、必要なのは単位ごとに分けられた各グループの集計結果だけです。
-            realized_list = aggregate_tradings(divided_tradings)
+            realized_list = aggregate_tradings(divided_tradings, each)
 
             return Response({
                 'user_id': pk,
@@ -156,21 +156,21 @@ def divide_tradings(tradings, each):
     # 各行に「年」「月」「週」「日」属性を付与します。
     # NOTE: これら属性には、 dt.*** の返却値の合計が入ります。値自体は無意味だけど、各単位ごとに一意になるってこと。うまく説明できねえ。
     # NOTE: each ごとに必要な属性が違うので、指定された each 以外の3つの属性は無駄ですが、 if が多くなって面倒なので一括で付与します。
-    data_frame['year'] = data_frame['sold_at'].dt.year
-    data_frame['month'] = data_frame['year'] + data_frame['sold_at'].dt.month
-    data_frame['week'] = data_frame['month'] + data_frame['sold_at'].dt.isocalendar().week
-    data_frame['day'] = data_frame['week'] + data_frame['sold_at'].dt.day
+    data_frame['year'] = data_frame['sold_at'].dt.year.astype(str)
+    data_frame['month'] = data_frame['year'] + '-' + data_frame['sold_at'].dt.month.astype(str)
+    data_frame['week'] = data_frame['month'] + '-' + data_frame['sold_at'].dt.isocalendar().week.astype(str)
+    data_frame['day'] = data_frame['week'] + '-' + data_frame['sold_at'].dt.day.astype(str)
 
     # どうせ data frame に行を足すならば、 realized 列も足してしまえ。
     data_frame['realized'] = data_frame['sell'] - data_frame['buy']
 
     # NOTE: こんな data_frame になっています。
-    #                        stock      buy     sell                          sold_at  year  month  week   day realized
-    #       0     Stock object (1)  1443.00  1399.00        2021-03-05 03:04:02+00:00  2021   2024  2033  2038   -44.00
-    #       1     Stock object (2)  1677.00  1624.00        2021-03-03 01:37:14+00:00  2021   2024  2033  2036   -53.00
-    #       ..                 ...      ...      ...                              ...   ...    ...   ...   ...      ...
-    #       421  Stock object (40)   355.00   311.00 2021-04-08 06:26:59.236529+00:00  2021   2025  2039  2047   -44.00
-    #       422  Stock object (29)  1282.00  1160.00 2021-04-09 01:25:29.109191+00:00  2021   2025  2039  2048  -122.00
+    #                  stock      buy     sell                          sold_at  year   month       week          day realized
+    # 0     Stock object (1)  1443.00  1399.00        2021-03-05 03:04:02+00:00  2021  2021-3   2021-3-9   2021-3-9-5   -44.00
+    # 1     Stock object (2)  1677.00  1624.00        2021-03-03 01:37:14+00:00  2021  2021-3   2021-3-9   2021-3-9-3   -53.00
+    # ..                 ...      ...      ...                              ...   ...     ...        ...          ...      ...
+    # 421  Stock object (40)   355.00   311.00 2021-04-08 06:26:59.236529+00:00  2021  2021-4  2021-4-14  2021-4-14-8   -44.00
+    # 422  Stock object (29)  1282.00  1160.00 2021-04-09 01:25:29.109191+00:00  2021  2021-4  2021-4-14  2021-4-14-9  -122.00
 
     # each 引数ごとに分けます。
     # NOTE: each=year なら data_frame[year] の値ごとに分ければいいということ。
@@ -189,11 +189,11 @@ def divide_tradings(tradings, each):
     return divided
 
 
-def aggregate_tradings(divided_tradings):
+def aggregate_tradings(divided_tradings, each):
 
     # こういうリストになっています。
     # [[Trading list], [Trading list], ]
-    # 各 Trading list を { gain, lost } の情報にまとめます。
+    # 各 Trading list を { label, gain, lost } の情報にまとめます。
     realized_list = []
     for trading_list in divided_tradings:
         gain = 0
@@ -204,7 +204,10 @@ def aggregate_tradings(divided_tradings):
             else:
                 # 正の数で合計したいので、マイナスをつけます。
                 lost += -trading['realized']
-        realized_list.append(dict(gain=gain, lost=lost))
+        # ラベルをつけます。 each 単位によって違います。
+        # NOTE: year なら year だけでいいし、 month なら month まで欲しい。
+        label = trading_list[0][each]
+        realized_list.append(dict(gain=gain, lost=lost, label=label))
     return realized_list
 
 
