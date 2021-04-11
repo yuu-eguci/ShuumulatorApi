@@ -29,6 +29,8 @@ class PortfolioViewSet(viewsets.ViewSet):
 
     # JWT ログインしているユーザのみ許可する設定です。
     authentication_classes = [JWTAuthentication]
+    # NOTE: これは and なのか or なのかそれが問題だ。 -> and らしい。
+    #       https://stackoverflow.com/questions/35557156/how-to-get-or-permissions-instead-of-and-in-rest-framework
     permission_classes = [permissions.IsAuthenticated]
 
     # Required for the Browsable API renderer to have a nice form.

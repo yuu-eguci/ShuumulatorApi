@@ -49,6 +49,10 @@ class JWTAuthentication(BaseAuthentication):
     def authenticate(self, request):
 
         print('JWTAuthentication.authenticate~!!!!')
+
+        # なぜか request.user を参照すると maximum recursion depth exceeded while calling a Python object 発生するイミフ
+        # print(request.user)
+
         auth = get_authorization_header(request).split()
         print(dict(auth=auth))
 
