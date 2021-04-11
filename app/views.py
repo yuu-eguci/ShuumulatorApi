@@ -1,6 +1,5 @@
 from django.contrib.auth.models import User, Group
-from rest_framework import viewsets
-from rest_framework import permissions
+from rest_framework import viewsets, permissions, status
 from app.serializers import UserSerializer, PortfolioSerializer, RealizedSerializer
 from django.views.decorators.csrf import requires_csrf_token
 from django.http import (
@@ -68,27 +67,32 @@ class RealizedViewSet(viewsets.ViewSet):
         return Response(serializer.data)
 
     def retrieve(self, request, pk=None):
-        # NOTE: pk を user id として扱えばいいかな。
-        sample_realized = Realized(
-            id=123,
-            qux='QUX',
-            quux='QUUX',
-        )
+
         try:
-            # NOTE: 本来ならここで一件取得するらしい。
-            # task = tasks[int(pk)]
-            pass
+
+            # 引数 each の isIn チェックです。
+            each = request.GET.get(key='each', default='year')
+            if each not in ['year', 'month', 'week', 'day']:
+                return Response(
+                    {
+                        'message': f"Invalid each query: '{each}'",
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            return Response({
+                'user_id': pk,
+                'each': each,
+                'realized': [],
+                'win_rates': 0,
+                'total_gain': 0,
+                'total_lost': 0,
+            })
+
         except KeyError:
             return Response(status=status.HTTP_404_NOT_FOUND)
         except ValueError:
             return Response(status=status.HTTP_400_BAD_REQUEST)
-
-        # NOTE: many=True をつけることで返却値が単一オブジェクトではなくリストになります。
-        #       そのときは instance=[sample_realized] となる。
-        #       retrieve は一件返却なので many=False
-        #       def list のほうでは複数にするのだろう。
-        serializer = RealizedSerializer(instance=sample_realized)
-        return Response(serializer.data)
 
 
 def fetch_keeping_tradings(user_id: int) -> list:
