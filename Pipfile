@@ -12,6 +12,7 @@ pymysql = "*"
 whitenoise = "*"
 django-pandas = "*"
 pyjwt = "*"
+django-cors-headers = "*"
 
 [dev-packages]
 
