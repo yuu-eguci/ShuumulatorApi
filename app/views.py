@@ -20,9 +20,27 @@ class UserViewSet(viewsets.ModelViewSet):
     """
     API endpoint that allows users to be viewed or edited.
     """
-    queryset = User.objects.all().order_by('-date_joined')
-    serializer_class = UserSerializer
+    # JWT ログインしているユーザのみ許可する設定です。
+    authentication_classes = [JWTAuthentication]
     permission_classes = [permissions.IsAuthenticated]
+    def retrieve(self, request, pk=None):
+
+        # NOTE: この retrieve は、ただのアクセス者がログインしているかどうかチェックするためだけに追加した。
+        #       「jwt でログインチェックってどうすりゃいいんだ?」
+        #       ↓
+        #       「authentication_classes = [JWTAuthentication] をつけた ViewSet で200返すだけでいいんじゃない?」
+        #       ↓
+        #       「retrieve にしたら url が /user/:pk になるじゃん。 pk 要らないんだけど」
+        #       ↓
+        #       「まあいっかお試しだしざくざく実装しよ」
+        #       ↓
+        #       ↓
+
+        print('UserViewSet.retrieve!!!')
+
+        return Response({
+            'hello': True,
+        },status=status.HTTP_200_OK)
 
 
 class PortfolioViewSet(viewsets.ViewSet):

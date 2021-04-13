@@ -83,6 +83,9 @@ class JWTAuthentication(BaseAuthentication):
         except jwt.ExpiredSignatureError:
             msg = "tokenはtimeout"
             raise exceptions.AuthenticationFailed(msg)
+        except jwt.InvalidSignatureError:
+            msg = "InvalidSignatureError"
+            raise exceptions.AuthenticationFailed(msg)
 
     def authenticate_header(self, request):
         pass

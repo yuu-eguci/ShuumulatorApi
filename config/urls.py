@@ -22,7 +22,7 @@ from rest_framework.routers import DefaultRouter
 # NOTE: viewsets とやらは views.py で定義する。
 router = DefaultRouter()
 # r'api/v1/users' にすればその URL でアクセスできる。
-router.register(r'users', views.UserViewSet)
+router.register(r'api/v1/user', views.UserViewSet, basename='baz')
 # NOTE: The base to use for the URL names that are created.
 #       (って書いてあるけど URL になるのは第一引数だ。どゆこと?)
 #       If unset the basename will be automatically generated based on the queryset attribute of the viewset, if it has one.
