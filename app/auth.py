@@ -24,10 +24,14 @@ def generate_jwt(user_object):
 class NormalAuthentication(BaseAuthentication):
     def authenticate(self, request):
 
+        print('NormalAuthentication.authenticate!!')
+        print('request.body', request.body)
+        print('request.POST', request.POST)
+        print('json.loads(request.body)', json.loads(request.body))
+
         # json で投げられた POST データを取得するには、こうしないとダメ。
         # でないと request.POST -> <QueryDict: {}> 空っぽになっちまう。
         data = json.loads(request.body)
-        print('NormalAuthentication.authenticate!!', data)
 
         # 今回は遊びなのでベタ書き。
         if data['code'] == 'everybody-dance-now':
