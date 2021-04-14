@@ -11,6 +11,7 @@ import time
 from django_pandas.io import read_frame
 from rest_framework.views import APIView
 from app.auth import NormalAuthentication, JWTAuthentication
+from pprint import pprint
 
 # __init__.py に定義しているクラスです。
 from . import Portfolio, Realized
@@ -75,6 +76,7 @@ class PortfolioViewSet(viewsets.ViewSet):
             #       今回は custom json を使うので別に要らないかなと。
             #       Rest framework の画面で返却値を見れるので、 Rest framework を使っているメリットはあります。
             #       まあ Rest framework 慣れてないから、とりあえずガシガシ実装するのが大事。
+            pprint(keeping_tradings)
             return Response({
                 'tradings': keeping_tradings,
             })
@@ -125,14 +127,16 @@ class RealizedViewSet(viewsets.ViewSet):
             # 分割してもらったけれど、必要なのは単位ごとに分けられた各グループの集計結果だけです。
             realized_list = aggregate_tradings(divided_tradings, each)
 
-            return Response({
+            response_data = {
                 'user_id': pk,
                 'each': each,
                 'realized': realized_list,
                 'win_rate': win_rate,
                 'total_gain': total_gain,
                 'total_lost': total_lost,
-            })
+            }
+            pprint(response_data)
+            return Response(response_data)
 
         except KeyError:
             return Response(status=status.HTTP_404_NOT_FOUND)
@@ -165,7 +169,7 @@ def fetch_completed_tradings(user_id: int, each: str):
 
     # 完了した Tradings を収集します。
     # NOTE: 完了は sell IS NOT NULL です。
-    completed_tradings = Trading.objects.filter(sell__isnull=False, user_id=user_id).values('stock', 'buy', 'sell', 'sold_at')
+    completed_tradings = Trading.objects.filter(sell__isnull=False, user_id=user_id).order_by('sold_at').values('stock', 'buy', 'sell', 'sold_at')
 
     # 時間計測ログです。
     print(f'fetch_completed_trading(Trading access finished): {time.time() - start}秒')
