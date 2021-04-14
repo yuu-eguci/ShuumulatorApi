@@ -5,6 +5,7 @@ from rest_framework.authentication import BaseAuthentication
 from rest_framework import exceptions
 from app.models import User
 from rest_framework.authentication import get_authorization_header
+import json
 
 
 def generate_jwt(user_object):
@@ -23,9 +24,13 @@ def generate_jwt(user_object):
 class NormalAuthentication(BaseAuthentication):
     def authenticate(self, request):
 
+        # json で投げられた POST データを取得するには、こうしないとダメ。
+        # でないと request.POST -> <QueryDict: {}> 空っぽになっちまう。
+        data = json.loads(request.body)
+        print('NormalAuthentication.authenticate!!', data)
+
         # 今回は遊びなのでベタ書き。
-        print('NormalAuthentication.authenticate!!!', request.POST, request.POST.get('code'))
-        if request._request.POST.get('code') == 'everybody-dance-now':
+        if data['code'] == 'everybody-dance-now':
             user_object = User.objects.filter(id=1)[0]
             print('user_object', user_object)
             jwt = generate_jwt(user_object)
