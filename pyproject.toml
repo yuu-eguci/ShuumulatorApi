@@ -1,0 +1,13 @@
+[tool.ruff]
+target-version = "py313"
+extend-exclude = ["app/migrations"]
+
+[tool.ruff.lint]
+# デフォルトに加えて bugbear (B) と bandit 由来のセキュリティ検査 (S) を使います。
+extend-select = ["B", "S"]
+# DRF の authentication_classes などはクラス属性のリストで書くのが普通なので除外します。
+ignore = ["RUF012"]
+
+[tool.ruff.lint.per-file-ignores]
+# テストはダミーの秘密情報と subprocess を使います。
+"app/tests/*" = ["S105", "S106", "S603"]
