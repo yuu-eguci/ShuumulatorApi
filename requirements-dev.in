@@ -1,0 +1,4 @@
+# 開発用の依存です。pip-compile --generate-hashes requirements-dev.in で requirements-dev.txt を作ります。
+-c requirements.txt
+pip-audit
+ruff

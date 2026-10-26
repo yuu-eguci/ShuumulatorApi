@@ -1,0 +1,7 @@
+# 本体の依存です。pip-compile --generate-hashes requirements.in で requirements.txt を作ります。
+Django>=5.2,<5.3
+djangorestframework
+django-cors-headers
+PyJWT
+PyMySQL
+whitenoise

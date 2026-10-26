@@ -14,9 +14,10 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path, include
-from app import views
+from django.urls import include, path
 from rest_framework.routers import DefaultRouter
+
+from app import views
 
 # Create a router and register our viewsets with it.
 # NOTE: viewsets とやらは views.py で定義する。
@@ -53,4 +54,4 @@ urlpatterns = [
     path('api-token-auth/', views.Login.as_view()),
 ]
 
-handler500 = views.my_customized_server_error
+# NOTE: 以前は本番でもデバッグ用の 500 画面を出していました。今は Django 標準の 500 画面です。

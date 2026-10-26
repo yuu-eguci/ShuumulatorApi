@@ -10,8 +10,10 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/3.1/ref/settings/
 """
 
-from pathlib import Path
 import os
+from pathlib import Path
+
+from django.core.management.utils import get_random_secret_key
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -21,12 +23,17 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/3.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'bo$wpl8nvvsgw)h#avfgsc7)n5c9mz#!m5iopg)o%a&=&n2h*q'
+# NOTE: 2021 年版はキーを直書きしていて公開済みです。環境変数から読みます。
+#       ローカルで未設定のときは起動ごとにランダムなキーを使います。
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY') or get_random_secret_key()
+
+# ログイン用コードです。未設定ならログインできません。
+SHUUMULATOR_LOGIN_CODE = os.environ.get('SHUUMULATOR_LOGIN_CODE', '')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [host for host in os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',') if host]
 
 
 # Application definition
@@ -124,8 +131,6 @@ LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'UTC'
 
 USE_I18N = True
-
-USE_L10N = True
 
 USE_TZ = True
 

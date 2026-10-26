@@ -1,29 +1,36 @@
-from django.contrib.auth.models import User, Group
-from rest_framework import viewsets, permissions, status
-from app.serializers import UserSerializer, PortfolioSerializer, RealizedSerializer
-from django.views.decorators.csrf import requires_csrf_token
-from django.http import (
-    HttpResponseServerError,
-)
+from django.db.models import OuterRef, Subquery
+from rest_framework import permissions, status, viewsets
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
-from app.models import Trading, Stock, StockLog
-import time
-from django_pandas.io import read_frame
 from rest_framework.views import APIView
-from app.auth import NormalAuthentication, JWTAuthentication
-from pprint import pprint
 
-# __init__.py に定義しているクラスです。
-from . import Portfolio, Realized
+from app.auth import JWTAuthentication, NormalAuthentication
+from app.models import StockLog, Trading
+from app.serializers import PortfolioSerializer, RealizedSerializer
 
 
-class UserViewSet(viewsets.ModelViewSet):
+def parse_user_id(pk):
+    """URL の user_id を数値にします。数値でなければ None です。"""
+    try:
+        return int(pk)
+    except (TypeError, ValueError):
+        return None
+
+
+def check_owner(request, user_id):
+    """自分以外の user_id のデータは見せません。"""
+    if user_id != request.user.id:
+        raise PermissionDenied()
+
+
+class UserViewSet(viewsets.ViewSet):
     """
-    API endpoint that allows users to be viewed or edited.
+    API endpoint that checks whether the JWT is valid.
     """
     # JWT ログインしているユーザのみ許可する設定です。
     authentication_classes = [JWTAuthentication]
     permission_classes = [permissions.IsAuthenticated]
+
     def retrieve(self, request, pk=None):
 
         # NOTE: この retrieve は、ただのアクセス者がログインしているかどうかチェックするためだけに追加した。
@@ -34,14 +41,11 @@ class UserViewSet(viewsets.ModelViewSet):
         #       「retrieve にしたら url が /user/:pk になるじゃん。 pk 要らないんだけど」
         #       ↓
         #       「まあいっかお試しだしざくざく実装しよ」
-        #       ↓
-        #       ↓
-
-        print('UserViewSet.retrieve!!!')
+        # NOTE: 以前は ModelViewSet で、使っていない list などを呼ぶと 500 になっていました。
 
         return Response({
             'hello': True,
-        },status=status.HTTP_200_OK)
+        }, status=status.HTTP_200_OK)
 
 
 class PortfolioViewSet(viewsets.ViewSet):
@@ -62,29 +66,18 @@ class PortfolioViewSet(viewsets.ViewSet):
 
     def retrieve(self, request, pk=None):
 
-        try:
-
-            # 手持ち stock(sell IS NULL)を取得するメソッドです。
-            # NOTE: pk を user id として扱えばいいかな。
-            keeping_tradings = fetch_keeping_tradings(pk)
-
-            # NOTE: many=True をつけることで返却値が単一オブジェクトではなくリストになります。
-            #       そのときは instance=[sample_portfolio] となる。
-            #       retrieve は一件返却なので many=False
-            #       def list のほうでは複数にするのだろう。
-            # NOTE: Rest framework を使っているのに serializer を使っていません。
-            #       今回は custom json を使うので別に要らないかなと。
-            #       Rest framework の画面で返却値を見れるので、 Rest framework を使っているメリットはあります。
-            #       まあ Rest framework 慣れてないから、とりあえずガシガシ実装するのが大事。
-            pprint(keeping_tradings)
-            return Response({
-                'tradings': keeping_tradings,
-            })
-
-        except KeyError:
-            return Response(status=status.HTTP_404_NOT_FOUND)
-        except ValueError:
+        # NOTE: pk を user id として扱います。数値でなければ 2021 年版と同じく 400 です。
+        user_id = parse_user_id(pk)
+        if user_id is None:
             return Response(status=status.HTTP_400_BAD_REQUEST)
+        check_owner(request, user_id)
+
+        # 手持ち stock(sell IS NULL)を取得するメソッドです。
+        # NOTE: Rest framework を使っているのに serializer を使っていません。
+        #       今回は custom json を使うので別に要らないかなと。
+        return Response({
+            'tradings': fetch_keeping_tradings(user_id),
+        })
 
 
 class RealizedViewSet(viewsets.ViewSet):
@@ -103,45 +96,42 @@ class RealizedViewSet(viewsets.ViewSet):
 
     def retrieve(self, request, pk=None):
 
-        try:
+        # 引数 each の isIn チェックです。
+        each = request.GET.get(key='each', default='year')
+        if each not in ['year', 'month', 'week', 'day']:
+            return Response(
+                {
+                    'message': f"Invalid each query: '{each}'",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-            # 引数 each の isIn チェックです。
-            each = request.GET.get(key='each', default='year')
-            if each not in ['year', 'month', 'week', 'day']:
-                return Response(
-                    {
-                        'message': f"Invalid each query: '{each}'",
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            # 完了済みの Tradings を取得します。
-            completed_tradings = fetch_completed_tradings(pk, each)
-
-            # realized 返却を行うため、以下で分割とかするけど、トータルの gain や lost、 win rate もほしいので先に集計しておきます。
-            win_rate, total_gain, total_lost = aggregate_totals(completed_tradings)
-
-            # each 引数で指定された単位ごとに分割します。
-            divided_tradings = divide_tradings(completed_tradings, each)
-
-            # 分割してもらったけれど、必要なのは単位ごとに分けられた各グループの集計結果だけです。
-            realized_list = aggregate_tradings(divided_tradings, each)
-
-            response_data = {
-                'user_id': pk,
-                'each': each,
-                'realized': realized_list,
-                'win_rate': win_rate,
-                'total_gain': total_gain,
-                'total_lost': total_lost,
-            }
-            pprint(response_data)
-            return Response(response_data)
-
-        except KeyError:
-            return Response(status=status.HTTP_404_NOT_FOUND)
-        except ValueError:
+        # NOTE: pk を user id として扱います。数値でなければ 2021 年版と同じく 400 です。
+        user_id = parse_user_id(pk)
+        if user_id is None:
             return Response(status=status.HTTP_400_BAD_REQUEST)
+        check_owner(request, user_id)
+
+        # 完了済みの Tradings を取得します。
+        completed_tradings = fetch_completed_tradings(user_id)
+
+        # realized 返却を行うため、以下で分割とかするけど、トータルの gain や lost、 win rate もほしいので先に集計しておきます。
+        win_rate, total_gain, total_lost = aggregate_totals(completed_tradings)
+
+        # each 引数で指定された単位ごとに分割します。
+        divided_tradings = divide_tradings(completed_tradings, each)
+
+        # 分割してもらったけれど、必要なのは単位ごとに分けられた各グループの集計結果だけです。
+        realized_list = aggregate_tradings(divided_tradings, each)
+
+        return Response({
+            'user_id': pk,
+            'each': each,
+            'realized': realized_list,
+            'win_rate': win_rate,
+            'total_gain': total_gain,
+            'total_lost': total_lost,
+        })
 
 
 def aggregate_totals(tradings):
@@ -158,23 +148,34 @@ def aggregate_totals(tradings):
         else:
             lose += 1
             total_lost += -realized
-    win_rate = win / (win + lose)
+    # 完了した取引が無いときは 0 です。
+    win_rate = win / (win + lose) if win + lose else 0
     return win_rate, total_gain, total_lost
 
 
-def fetch_completed_tradings(user_id: int, each: str):
-
-    # NOTE: DB アクセスにどれくらい時間がかかるのか、なんとなく計測しています。
-    start = time.time()
+def fetch_completed_tradings(user_id):
 
     # 完了した Tradings を収集します。
-    # NOTE: 完了は sell IS NOT NULL です。
-    completed_tradings = Trading.objects.filter(sell__isnull=False, user_id=user_id).order_by('sold_at').values('stock', 'buy', 'sell', 'sold_at')
+    # NOTE: 完了は sell IS NOT NULL です。 buy や sold_at が無いものは損益を計算できないので除きます。
+    return list(
+        Trading.objects
+        .filter(user_id=user_id, sell__isnull=False, buy__isnull=False, sold_at__isnull=False)
+        .order_by('sold_at', 'id')
+        .values('buy', 'sell', 'sold_at')
+    )
 
-    # 時間計測ログです。
-    print(f'fetch_completed_trading(Trading access finished): {time.time() - start}秒')
 
-    return completed_tradings
+def labels_of(sold_at):
+    """「年」「月」「週」「日」の label を作ります。
+
+    NOTE: 2021 年版は pandas で作っていた label をそのまま再現しています。
+          week は月の label に ISO 週番号を、 day は week の label に日を足したものです。
+    """
+    year = str(sold_at.year)
+    month = f'{year}-{sold_at.month}'
+    week = f'{month}-{sold_at.isocalendar()[1]}'
+    day = f'{week}-{sold_at.day}'
+    return {'year': year, 'month': month, 'week': week, 'day': day}
 
 
 def divide_tradings(tradings, each):
@@ -184,43 +185,16 @@ def divide_tradings(tradings, each):
     #       month -> 月ごとに集計。
     #       week -> 週ごとに集計。
     #       day -> 日ごとに集計。
-
-    # NOTE: django_pandas.io.read_frame です。
-    # NOTE: pandas を使うと、各行に「年」「月」「週」「日」属性をかんたんにつけられそうだったので、使います。
-    data_frame = read_frame(tradings)
-
-    # 各行に「年」「月」「週」「日」属性を付与します。
-    # NOTE: これら属性には、 dt.*** の返却値の合計が入ります。値自体は無意味だけど、各単位ごとに一意になるってこと。うまく説明できねえ。
-    # NOTE: each ごとに必要な属性が違うので、指定された each 以外の3つの属性は無駄ですが、 if が多くなって面倒なので一括で付与します。
-    data_frame['year'] = data_frame['sold_at'].dt.year.astype(str)
-    data_frame['month'] = data_frame['year'] + '-' + data_frame['sold_at'].dt.month.astype(str)
-    data_frame['week'] = data_frame['month'] + '-' + data_frame['sold_at'].dt.isocalendar().week.astype(str)
-    data_frame['day'] = data_frame['week'] + '-' + data_frame['sold_at'].dt.day.astype(str)
-
-    # どうせ data frame に行を足すならば、 realized 列も足してしまえ。
-    data_frame['realized'] = data_frame['sell'] - data_frame['buy']
-
-    # NOTE: こんな data_frame になっています。
-    #                  stock      buy     sell                          sold_at  year   month       week          day realized
-    # 0     Stock object (1)  1443.00  1399.00        2021-03-05 03:04:02+00:00  2021  2021-3   2021-3-9   2021-3-9-5   -44.00
-    # 1     Stock object (2)  1677.00  1624.00        2021-03-03 01:37:14+00:00  2021  2021-3   2021-3-9   2021-3-9-3   -53.00
-    # ..                 ...      ...      ...                              ...   ...     ...        ...          ...      ...
-    # 421  Stock object (40)   355.00   311.00 2021-04-08 06:26:59.236529+00:00  2021  2021-4  2021-4-14  2021-4-14-8   -44.00
-    # 422  Stock object (29)  1282.00  1160.00 2021-04-09 01:25:29.109191+00:00  2021  2021-4  2021-4-14  2021-4-14-9  -122.00
-
-    # each 引数ごとに分けます。
-    # NOTE: each=year なら data_frame[year] の値ごとに分ければいいということ。
     divided = []
-    # NOTE: data_frame をそのまま for すると column 取得になる。びっくり。
     used_value = []
-    for index, row in data_frame.iterrows():
+    for trading in tradings:
+        row = {**trading, **labels_of(trading['sold_at']), 'realized': trading['sell'] - trading['buy']}
         # 属性の値が変わったタイミングで新しいグループ(list)を作る。
         if row[each] not in used_value:
             divided.append([])
             used_value.append(row[each])
         # row は一番新しいグループに入れる。
-        # NOTE: pandas の概念は本関数内で完結させるため、 dict で返します。
-        divided[-1].append(dict(row))
+        divided[-1].append(row)
 
     return divided
 
@@ -243,11 +217,11 @@ def aggregate_tradings(divided_tradings, each):
         # ラベルをつけます。 each 単位によって違います。
         # NOTE: year なら year だけでいいし、 month なら month まで欲しい。
         label = trading_list[0][each]
-        realized_list.append(dict(gain=gain, lost=lost, label=label))
+        realized_list.append({'gain': gain, 'lost': lost, 'label': label})
     return realized_list
 
 
-def fetch_keeping_tradings(user_id: int) -> list:
+def fetch_keeping_tradings(user_id) -> list:
     """手持ちの stocks に情報をつけて返します。
 
     Args:
@@ -257,71 +231,40 @@ def fetch_keeping_tradings(user_id: int) -> list:
         list: code, name, buy, bought_at, current_price をもつ dict のリスト
     """
 
-    # NOTE: DB アクセスにどれくらい時間がかかるのか、なんとなく計測しています。
-    start = time.time()
+    # 銘柄ごとの最新の stock_log.price が現在価格です。
+    # NOTE: 以前は「最新[stock レコード数]件」を現在価格にしていて、銘柄ごとの記録回数がずれると古い価格になっていました。
+    latest_price = StockLog.objects.filter(stock=OuterRef('stock')).order_by('-id').values('price')[:1]
 
     # sell IS NULL を取得。
-    # HACK: SELECT 項目を選びたいんだがやり方忘れた。たぶん values
-    tradings = Trading.objects.filter(sell__isnull=True, user_id=user_id)
+    tradings = (
+        Trading.objects
+        .filter(sell__isnull=True, user_id=user_id)
+        .select_related('stock')
+        .annotate(current_price=Subquery(latest_price))
+        .order_by('id')
+    )
 
-    # 各項目に、 stock_log.price を持たせます。(現在価格)
-    # NOTE: 最新[stock レコード数]件が、最新の価格です。
-    # NOTE: stock_log.is_newest とか足せばもっと明示的に書けると思う。
-    stock_count = Stock.objects.count()
-    stock_logs = StockLog.objects.order_by('id').reverse()[:stock_count]
-
-    # 時間計測ログです。
-    print(f'fetch_keeping_tradings(Trading, Stock, StockLog access finished): {time.time() - start}秒')
-
-    # { stock_id: price } にフォーマット変更します。
-    stock_log_dict = {}
-    for stock_log in stock_logs:
-        stock_log_dict[stock_log.stock.id] = stock_log.price
-
-    # 返却する list を作成します。
-    keeping_tradings = []
-    for trading in tradings:
-        keeping_tradings.append({
+    return [
+        {
             'code': trading.stock.code,
             'name': trading.stock.name,
             'buy': trading.buy,
             'bought_at': trading.bought_at,
-            'current_price': stock_log_dict[trading.stock.id] if trading.stock.id in stock_log_dict else None,
-        })
-
-    return keeping_tradings
-
-
-@requires_csrf_token
-def my_customized_server_error(request, template_name='500.html'):
-
-    # NOTE: print が App Service で機能するかどうか確かめるために print しています。
-    import traceback
-    print(traceback.format_exc())
-    # return HttpResponseServerError('<h1>Server Error (500)</h1>')
-
-    # DEBUG = True と同様の画面を出します。
-    import sys
-    from django.views import debug
-    error_html = debug.technical_500_response(request, *sys.exc_info()).content
-    return HttpResponseServerError(error_html)
+            'current_price': trading.current_price,
+        }
+        for trading in tradings
+    ]
 
 
 class Login(APIView):
     """このクラスにより、次のことが可能になった。
     - path('api-token-auth/', views.Login.as_view())
-    - curl -X POST -d "code=everybody-dance-now" http://localhost:8000/api-token-auth/ こんなふうにアクセスすると jwt が返ってくる。(def post の効果)
-    - authentication_classes = [JWTAuthentication] と permission_classes = [permissions.IsAuthenticated] をつけた viewset には、その token を付与しとかないとアクセスできない
-
-    Args:
-        APIView ([type]): [description]
-
-    Returns:
-        [type]: [description]
+    - POST {"code": "..."} すると jwt が返ってくる。(def post の効果)
+    - authentication_classes = [JWTAuthentication] と permission_classes = [permissions.IsAuthenticated] をつけた
+      viewset には、その token を付与しとかないとアクセスできない
     """
 
     authentication_classes = [NormalAuthentication]
 
     def post(self, request, *args, **kwargs):
-        print('Login.post!!', request.POST)
         return Response({'token': request.user})
